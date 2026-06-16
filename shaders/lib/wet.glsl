@@ -69,3 +69,35 @@ vec3 applyFakeWetReflection(
 
     return color;
 }
+
+vec3 applyWaterSurface(
+    vec3 color,
+    sampler2D sceneTexture,
+    vec2 uv,
+    float sceneMask,
+    float waterMask,
+    float rainStrength,
+    float frameTimeCounter,
+    float intensity
+) {
+    float mask = clamp(waterMask, 0.0, 1.0) * sceneMask;
+    if (mask <= 0.001) return color;
+
+    float ripple = getWetReflectionStreak(uv * vec2(1.0, 0.72), frameTimeCounter);
+    float rainBoost = mix(1.0, 1.25, clamp(rainStrength, 0.0, 1.0));
+    vec3 waterTint = vec3(0.58, 0.76, 1.0);
+    vec3 softReflection = mix(WET_COOL_HIGHLIGHT, waterTint, 0.65);
+    vec2 roughOffset = vec2(0.0018, 0.0012) * (1.0 + rainStrength * 1.5);
+    vec3 roughReflection =
+        texture2D(sceneTexture, uv + roughOffset).rgb * 0.25 +
+        texture2D(sceneTexture, uv - roughOffset).rgb * 0.25 +
+        texture2D(sceneTexture, uv + roughOffset.yx).rgb * 0.25 +
+        texture2D(sceneTexture, uv - roughOffset.yx).rgb * 0.25;
+    float reflectionBrightness = smoothstep(0.25, 1.05, getLuminance(roughReflection));
+
+    color = mix(color, color * vec3(0.88, 0.96, 1.08), mask * 0.28);
+    color = mix(color, roughReflection * vec3(0.72, 0.88, 1.08), mask * intensity * reflectionBrightness * 0.12);
+    color += softReflection * mask * intensity * rainBoost * (0.045 + ripple * 0.04);
+
+    return color;
+}

@@ -3,7 +3,7 @@
 varying vec2 texCoord;
 
 uniform sampler2D colortex0; // scene color
-uniform sampler2D colortex2; // wet mask
+uniform sampler2D colortex2; // terrain material masks
 uniform float viewWidth;
 uniform float viewHeight;
 
@@ -46,5 +46,5 @@ vec3 blurBloom(vec2 uv) {
 void main() {
     gl_FragData[0] = texture2D(colortex0, texCoord); // pass scene color through
     gl_FragData[1] = vec4(blurBloom(texCoord), 1.0);  // blurred bloom buffer
-    gl_FragData[2] = texture2D(colortex2, texCoord); // pass wet mask through
+    gl_FragData[2] = texture2D(colortex2, texCoord); // pass terrain masks through
 }

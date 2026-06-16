@@ -18,11 +18,11 @@ void main() {
 
     albedo.rgb *= texture2D(lightmap, lmCoord).rgb;
 
-    // Alpha is unused for blending in the opaque terrain pass, so it carries
-    // the lava mask through to lib/lighting.glsl via colortex0.
-    gl_FragData[0] = vec4(albedo.rgb, isLava);
+    // Keep the scene color buffer opaque. Some Iris/composite paths can treat
+    // colortex0 alpha as real transparency, so material masks live in colortex2.
+    gl_FragData[0] = vec4(albedo.rgb, 1.0);
 
-    // colortex2 carries rain-surface masks:
-    // R = upward-facing wettable floor/top surface, G = vertical wall surface.
-    gl_FragData[1] = vec4(wetMaskBase, wallMaskBase, 0.0, 1.0);
+    // colortex2 carries terrain material masks:
+    // R = upward wettable floor, G = vertical wall, B = lava/emissive block.
+    gl_FragData[1] = vec4(wetMaskBase, wallMaskBase, isLava, 1.0);
 }
