@@ -10,6 +10,7 @@ varying vec4 glColor;
 varying float isLava;
 varying float wetMaskBase;
 varying float wallMaskBase;
+varying vec3 worldNormalOut;
 
 const float LAVA_BLOCK_ID = 11000.0;
 const float WET_STONE_ID = 11100.0;
@@ -54,6 +55,7 @@ void main() {
 
     vec3 viewNormal = normalize(gl_NormalMatrix * gl_Normal);
     vec3 worldNormal = normalize((gbufferModelViewInverse * vec4(viewNormal, 0.0)).xyz);
+    worldNormalOut = worldNormal;
     float nonLava = 1.0 - isLava;
     float blockId = mc_Entity.x;
     float floorWetResponse = getWetFloorResponse(blockId);

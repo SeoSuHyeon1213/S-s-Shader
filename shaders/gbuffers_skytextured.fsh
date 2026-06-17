@@ -22,9 +22,10 @@ void main() {
     float dayMask = skyDayMask(worldTime);
     float nightMask = 1.0 - dayMask;
     float horizon = skyHorizonMask(worldDir);
+    float twilight = skyTwilightMask(worldTime);
     float luma = dot(texSample.rgb, vec3(0.2126, 0.7152, 0.0722));
 
-    float tintAmount = clamp(0.30 + horizon * 0.18 + rainStrength * 0.24, 0.0, 0.72);
+    float tintAmount = clamp(0.26 + horizon * 0.14 + twilight * 0.10 + rainStrength * 0.24, 0.0, 0.68);
     tintAmount *= mix(1.12, 0.82, luma);
 
     vec3 skyTinted = mix(texSample.rgb, texSample.rgb * skyColor * 1.35, tintAmount);

@@ -6,13 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## Goals / 목표사항
 
-- Iris 기반 마인크래프트 분위기형 쉐이더팩 제작
-- 색보정, 비네트, 블룸, 안개를 중심으로 부드러운 파스텔 톤 구현
-- 태양, 달, 횃불, 용암, 비 색상 팔레트를 중심으로 장면 분위기 통일
-- 하늘, 구름, 지형 fog를 같은 sky color 체계로 묶어 수평선 층 분리 완화
-- 비 오는 날 wet floor/wall mask 기반 젖은 표면 하이라이트 구현
-- 용암과 물은 block/material mask로 분리해 전용 발광/하이라이트 적용
-- 인게임 Iris 컴파일 검증 및 낮, 밤, 동굴, 비, 네더, 엔드 환경별 튜닝
+- Iris/NeOculus 기반 Minecraft 분위기형 shaderpack 제작.
+- 하늘, 구름, 안개, 지형 fog, 물 반사를 `lib/sky.glsl`의 공통 sky color 체계로 통합해 낮/밤 전환과 수평선 층 분리를 완화.
+- 파스텔 톤을 유지하면서 색감, 채도, 노출, 대비를 게임 플레이에 맞게 조정.
+- 들고 있는 횃불과 설치된 횃불의 색과 체감 밝기를 비슷하게 맞추고, 실내/동굴에서는 강하게 낮 야외에서는 약하게 보정.
+- shadow map 기반 그림자, Poisson PCF, PCSS, contact shadow를 단계적으로 강화해 바닐라보다 뚜렷한 입체감 구현.
+- 현재 그림자 구현률 70-78% 수준에서 세부 caster rule, cascade/distance split 그림자 안정화, translucent/colored shadow를 다음 목표로 진행.
+- 물 전용 `gbuffers_water`와 water mask 기반 SSR을 확장해 sky reflection, Fresnel, ripple, rough reflection을 자연스럽게 개선.
+- 비 오는 날 wet floor/wall mask 기반 젖은 표면 하이라이트와 rain exposure 반응 강화.
+- lava, water, wet floor, wall 등 material mask 구조를 유지해 블록/재질별 효과를 분리.
+- bloom, fog, vignette, dithering, tone mapping을 통합해 밴딩과 과노출을 줄이고 부드러운 화면 분위기 유지.
+- NeOculus/Embeddium 환경에서 shaderpack zip 구조와 GLSL 호환성을 계속 검증.
+- 추후 개선 목표: cascade shadow map, translucent/colored shadow, material/caster rule, water SSR binary search, roughness blur, sky fallback, normal 기반 wet specular BRDF.
 
 ## In-Game Tuning Checklist
 
@@ -23,9 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - 비 오는 날 wet reflection과 fog 강도 확인
 - 물가에서 water SSR, sky reflection, rough reflection 확인
 - 네더에서 용암 발광 과포화 확인
-- 엔드에서 sky/fog 색상 왜곡 확인
 
-## [Unreleased]
+
 
 ### Added
 
@@ -88,6 +92,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - shadow map 샘플링, PCF, 거리 fade, 파스텔 그림자 tint 추가
 
 ### Changed
+- `shaders/lib/lighting.glsl`
+  - normal buffer 기반 diffuse/shadow shading을 실제 `NdotL` 중심으로 강화
+  - `applyTerrainFormLighting()`에서 normal buffer 신뢰도(`normalMask`)를 사용해 direct diffuse, back-face form shadow, shadow map 기반 cast shadow를 분리 계산
+  - 그림자 영역에서는 sky shadow tint를 사용해 면 방향과 shadow visibility가 함께 어두워지도록 조정
+- `shaders/gbuffers_terrain.*`, `shaders/gbuffers_water.fsh`, `shaders/composite.fsh`, `shaders/final.fsh`, `shaders/lib/lighting.glsl`, `shaders/shaders.properties`
+  - `colortex3` 기반 normal buffer 추가
+  - terrain pass는 world normal을, water pass는 wave-adjusted world normal을 `colortex3.rgb`에 인코딩하고 `a`에 normal 유효 마스크를 기록
+  - composite pass가 normal buffer를 final pass까지 전달하도록 `DRAWBUFFERS:0123`으로 확장
+  - `applyTerrainFormLighting()`이 wet floor/wall 근사 normal 대신 normal buffer를 우선 사용하도록 변경
+- `shaders/lib/shadows.glsl`, `shaders/final.fsh`, `shaders/lib/lighting.glsl`, `shaders/shadow.vsh`, `shaders/shadow.fsh`
+  - 추천 구현 순서 1-5단계 적용: PCSS 기본 활성화, 그림자 대비 강화, contact shadow 강화, terrain form shading 추가, shadow caster alpha/material rule 추가
+  - `SHADOW_MODE` 기본값을 `1`로 변경하고 `SHADOW_DARKNESS`를 `0.54`로 올려 바닐라보다 더 분명한 그림자 대비를 목표로 조정
+  - `CONTACT_SHADOW_INTENSITY` 기본값을 `0.4`로 올려 가까운 오브젝트 접지감을 강화
+  - wet floor/wall mask를 활용한 가벼운 normal 근사 diffuse shading을 추가해 지형 면 방향에 따른 입체감을 보강
+  - shadow pass에서 alpha cutout을 처리하고 water/lava/glass 계열은 solid shadow caster에서 제외
+- `shaders/lib/sky.glsl`, `shaders/gbuffers_clouds.fsh`, `shaders/gbuffers_water.fsh`
+  - 하늘, 구름, 안개, 물 반사 색을 `lib/sky.glsl`의 공통 sky color 체계로 더 강하게 통합
+  - `getSkyUnifiedColor()`, `getSkyCloudColor()`, `getSkyWaterTint()`를 추가해 낮/밤 전환과 수평선 근처 색 분리를 완화
+  - 구름 pass의 개별 색 계산을 공통 sky 함수로 이동하고, 물 tint도 시간/날씨/수평선 기반 sky reflection에 맞춰 보정
+- `shaders/lib/lighting.glsl`, `shaders/final.fsh`
+  - 들고 있는 횃불 조명이 설치된 기본 횃불과 더 비슷한 체감 밝기를 갖도록 조정
+  - `TORCH_LIGHT_INTENSITY` 기본값을 `0.85`에서 `1.0`으로 올리고, 손 횃불의 core/edge 밝기와 어두운 실내 보정을 강화
+  - 낮 야외에서는 과하게 튀지 않도록 환경 보정은 유지하되 최소 밝기를 소폭 상향
+- `shaders/lib/shadows.glsl`
+  - PCSS penumbra radius clamp를 더 강하게 조정
+  - `PCSS_LIGHT_SIZE`를 `28.0`에서 `20.0`으로 낮추고, radius 범위를 `0.85` - `2.0`으로 제한해 그림자 번짐을 줄임
+- `shaders/lib/shadows.glsl`
+  - PCSS 최종 shadow filter를 `PCSS_FILTER_SAMPLES = 8`로 명시
+  - blocker search와 기본 Poisson PCF 샘플 수도 각각 `PCSS_BLOCKER_SAMPLES`, `SHADOW_PCF_SAMPLES`로 분리해 튜닝 지점을 정리
+- `shaders/lib/shadows.glsl`
+  - `SHADOW_MODE = 1` PCSS 경로에 8-sample blocker search를 추가
+  - `findAverageBlockerDepth()`로 평균 blocker depth를 계산하고, receiver/blocker depth 차이에 따라 penumbra radius를 산출
+  - blocker가 없을 때는 visibility `1.0`을 반환해 불필요한 그림자 번짐을 방지
+  - 최종 필터링은 기존 8-sample Poisson PCF를 재사용해 성능 부담을 낮춤
 
 - 하늘/안개/구름 색 체계를 `lib/sky.glsl` 중심으로 통합
   - `gbuffers_skybasic`이 `getSkyBaseColor(worldDir, ...)`로 기본 하늘색 출력
@@ -154,6 +192,7 @@ Options are grouped under the `MOOD` screen in Iris.
 - `colortex2.g`: wall mask
 - `colortex2.b`: lava mask
 - `colortex2.a`: water mask
+- `colortex3`: encoded world normal, alpha = valid normal mask
 
 ## Current Sky/Fog Layout
 
@@ -163,6 +202,32 @@ Options are grouped under the `MOOD` screen in Iris.
 - `final.fsh`: 지형/오브젝트(`depth < 1.0`)에만 fog 적용
 - `final.fsh`: 하늘 픽셀(`depth >= 1.0`)에는 별도 sky fog 덧칠 없음
 
+
+## Current Shadow Implementation Status
+
+- 현재 그림자 구현률 추정: 약 70-78%.
+- 현재 상태: PCSS가 기본 활성화되었고, normal buffer 기반 `NdotL` diffuse/shadow shading까지 적용되어 바닐라보다 더 분명한 그림자 대비와 지형 입체감을 목표로 조정된 상태입니다.
+- 구현된 부분:
+  - `shadowtex0`, `shadowModelView`, `shadowProjection` 기반 shadow map 샘플링.
+  - `shadowMapResolution = 2048`, `shadowDistance = 96.0` 설정.
+  - `SHADOW_MODE = 0` 선택 경로의 8-sample Poisson PCF.
+  - `SHADOW_MODE = 1` 기본 경로의 8-sample blocker search + 8-sample filter PCSS.
+  - `SHADOW_DARKNESS = 0.54` 기반 강화된 shadow tint.
+  - `colortex3` normal buffer 기반 direct diffuse, back-face form shadow, shadow map 기반 cast shadow 조합.
+  - `CONTACT_SHADOW_INTENSITY = 0.4` 기반 강화된 screen-space contact shadow.
+  - shadow pass alpha cutout 처리 및 water/lava/glass 계열 solid shadow caster 제외.
+  - 거리 fade, shadow map edge fade, 날씨 fade, 낮/밤 fade, sky color 기반 shadow tint.
+  - 비 오는 날 wet surface 반응을 위한 shadow 기반 rain exposure 보조 함수.
+- 현재 한계:
+  - normal 기반 diffuse는 적용되었지만, 블록/재질별 roughness와 BRDF 수준의 고급 조명은 아직 없습니다.
+  - screen-space contact shadow는 화면 밖/가려진 정보는 처리하지 못합니다.
+  - `shadow.vsh` / `shadow.fsh`의 material rule은 1차 caster 제외 수준이며 foliage 세부 투과/색 그림자는 아직 없습니다.
+  - cascade shadow map, translucent/colored shadow, material별 shadow tint, directional BRDF 조명 반응은 아직 없습니다.
+- 다음 그림자 개선 우선순위:
+  - foliage/water/glass/emissive 세부 caster rule 개선.
+  - cascade shadow map 또는 distance split 기반 원거리 그림자 안정화.
+  - translucent/colored shadow와 material별 shadow tint 추가.
+  - normal buffer를 wet specular BRDF와 water shading에도 더 적극적으로 연결.
 ## Water SSR Roadmap
 
 - 물 마스크(`colortex2.a`)가 있는 픽셀에만 SSR 적용 완료

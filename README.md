@@ -37,6 +37,14 @@ The current goal is a soft atmospheric style built around color grading, vignett
 - Basic shadow map sampling with PCF
 - PCF 기반의 기본 shadow map 샘플링
 
+
+## Shadow / Normal Buffer Status
+
+- `SHADOW_MODE = 1` enables the PCSS path by default.
+- `colortex3` stores encoded world normals for terrain and water.
+- Final lighting uses the normal buffer for `NdotL` direct diffuse, back-face form shadow, and shadow-map-based cast shadow blending.
+- Contact shadows are strengthened for closer object grounding.
+- Remaining shadow work: detailed foliage/water/glass/emissive caster rules, cascade or distance-split stability, and translucent/colored shadows.
 ## Main Color Palette
 
 - Sun: `#F1FEC6`
@@ -73,12 +81,13 @@ Options are grouped under the `MOOD` screen in Iris:
 
 ## Status
 
-This shader is still in development. Core post-processing features are implemented, but in-game testing and visual tuning are still needed across daytime, nighttime, caves, rain, Nether, and End environments.
+This shader is still in development. Core post-processing, sky/fog unification, wet surfaces, PCSS shadows, contact shadows, and normal-buffer-based terrain form lighting are implemented. In-game testing and visual tuning are still needed across daytime, nighttime, caves, rain, Nether, and End environments.
 
 이 쉐이더는 아직 개발 중입니다. 핵심 후처리 기능은 구현되어 있지만, 낮, 밤, 동굴, 비, 네더, 엔드 환경에서의 인게임 테스트와 색감 튜닝이 아직 필요합니다.
 
 ## License
-
+```
 MIT License. See `LICENSE` for details.
 
 MIT License를 사용합니다. 자세한 내용은 `LICENSE` 파일을 참고하세요.
+```

@@ -4,10 +4,11 @@ varying vec2 texCoord;
 
 uniform sampler2D colortex0; // scene color
 uniform sampler2D colortex2; // terrain material masks
+uniform sampler2D colortex3; // encoded world normals
 uniform float viewWidth;
 uniform float viewHeight;
 
-/* DRAWBUFFERS:012 */
+/* DRAWBUFFERS:0123 */
 
 #define BLOOM_THRESHOLD 0.8 // Bloom threshold [0.4 0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2 1.4 1.6]
 const float BLOOM_KNEE      = 0.2;
@@ -47,4 +48,5 @@ void main() {
     gl_FragData[0] = texture2D(colortex0, texCoord); // pass scene color through
     gl_FragData[1] = vec4(blurBloom(texCoord), 1.0);  // blurred bloom buffer
     gl_FragData[2] = texture2D(colortex2, texCoord); // pass terrain masks through
+    gl_FragData[3] = texture2D(colortex3, texCoord); // pass encoded world normals through
 }

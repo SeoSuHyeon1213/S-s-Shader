@@ -9,8 +9,9 @@ varying vec4 glColor;
 varying float isLava;
 varying float wetMaskBase;
 varying float wallMaskBase;
+varying vec3 worldNormalOut;
 
-/* DRAWBUFFERS:02 */
+/* DRAWBUFFERS:023 */
 
 void main() {
     vec4 albedo = texture2D(texture, texCoord) * glColor;
@@ -26,4 +27,7 @@ void main() {
     // R = material-weighted wet floor, G = material-weighted wet wall,
     // B = lava/emissive block, A = water. Terrain never writes water mask.
     gl_FragData[1] = vec4(wetMaskBase, wallMaskBase, isLava, 0.0);
+
+    vec3 encodedNormal = normalize(worldNormalOut) * 0.5 + 0.5;
+    gl_FragData[2] = vec4(encodedNormal, 1.0);
 }

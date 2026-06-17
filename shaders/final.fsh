@@ -5,6 +5,7 @@ varying vec2 texCoord;
 uniform sampler2D colortex0; // composited scene color
 uniform sampler2D colortex1; // blurred bloom buffer (from composite)
 uniform sampler2D colortex2; // terrain wet/wall/lava/water masks
+uniform sampler2D colortex3; // encoded world normals
 uniform sampler2D depthtex0; // scene depth
 uniform sampler2D shadowtex0; // sun/moon shadow map
 
@@ -25,6 +26,7 @@ uniform mat4 shadowProjection;
 #include "/lib/fog.glsl"
 #include "/lib/sky.glsl"
 #include "/lib/shadows.glsl"
+#include "/lib/contact_shadows.glsl"
 #include "/lib/lighting.glsl"
 #include "/lib/wet.glsl"
 #include "/lib/ssr.glsl"
@@ -50,9 +52,12 @@ const float HORIZON_FOG_PULL = 0.18; // Blends distant terrain into the shared s
 // ---- Bloom ----
 #define BLOOM_INTENSITY 0.16 // Bloom strength [0.0 0.05 0.1 0.15 0.16 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.6 0.7 0.8 0.9 1.0]
 
+// ---- Contact Shadows ----
+#define CONTACT_SHADOW_INTENSITY 0.4 // Near-field screen-space contact shadow strength [0.0 0.08 0.16 0.24 0.32 0.4 0.5 0.65 0.8]
+
 // ---- Lighting ----
 #define LIGHTING_STRENGTH 0.5 // Mood lighting strength [0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0]
-#define TORCH_LIGHT_INTENSITY 0.85 // Held torch intensity [0.0 0.25 0.5 0.65 0.75 0.85 1.0 1.15 1.3 1.5]
+#define TORCH_LIGHT_INTENSITY 1.0 // Held torch intensity [0.0 0.25 0.5 0.65 0.75 0.85 1.0 1.15 1.3 1.5]
 #define DAY_LIGHT_STRENGTH 1.0 // Daylight strength [0.6 0.7 0.8 0.9 1.0 1.1 1.2 1.3 1.4]
 #define NIGHT_LIGHT_STRENGTH 1.0 // Moonlight/night readability strength [0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2 1.3]
 #define SUNSET_GLOW_STRENGTH 1.0 // Sunrise/sunset warm glow strength [0.0 0.25 0.5 0.75 1.0 1.25 1.5 1.75 2.0]
@@ -77,10 +82,13 @@ void main() {
     vec4 sceneSample = texture2D(colortex0, texCoord);
     vec3 color = sceneSample.rgb;
     vec4 terrainSurfaceMasks = texture2D(colortex2, texCoord);
+    vec4 normalSample = texture2D(colortex3, texCoord);
     float terrainWetMask = terrainSurfaceMasks.r;
     float terrainWallMask = terrainSurfaceMasks.g;
     float lavaMask = terrainSurfaceMasks.b; // written by gbuffers_terrain via block.properties
     float waterMask = terrainSurfaceMasks.a; // written by gbuffers_water
+    vec3 worldNormal = normalize(normalSample.rgb * 2.0 - 1.0);
+    float normalMask = normalSample.a * sceneSample.a;
 
     // Bloom (blurred bright-pass from composite)
     color += texture2D(colortex1, texCoord).rgb * BLOOM_INTENSITY;
@@ -96,7 +104,9 @@ void main() {
     float shadowVisibility = getShadowVisibility(worldPos, dist, far, sceneMask, worldTime, rainStrength);
     float rainExposure = getRainExposure(worldPos, dist, far, sceneMask);
     float surfaceRainStrength = rainStrength * rainExposure;
-    color = applyShadow(color, shadowVisibility, sceneMask);
+    color = applyShadow(color, shadowVisibility, sceneMask, worldDir, worldTime, rainStrength);
+    color = applyContactShadow(color, depthtex0, texCoord, depth, viewPos, sceneMask, gbufferProjectionInverse, dist, worldDir, worldTime, rainStrength, CONTACT_SHADOW_INTENSITY);
+    color = applyTerrainFormLighting(color, worldDir, sceneMask, terrainWetMask, terrainWallMask, shadowVisibility, worldNormal, normalMask, worldTime, rainStrength);
 
     // Mood lighting
     color = applyMoodLighting(color, viewPos, sceneMask, LIGHTING_STRENGTH, rainStrength, worldTime, heldBlockLightValue, heldBlockLightValue2, lavaMask, frameTimeCounter, TORCH_LIGHT_INTENSITY, DAY_LIGHT_STRENGTH, NIGHT_LIGHT_STRENGTH, SUNSET_GLOW_STRENGTH);
@@ -115,7 +125,8 @@ void main() {
     if (depth < 1.0) {
         float fogFactor = getFogFactor(dist, far, fogStartRatio, FOG_DENSITY);
         float horizonFog = skyHorizonMask(worldDir) * smoothstep(far * 0.35, far, dist);
-        fogFactor = clamp(fogFactor + horizonFog * HORIZON_FOG_PULL * (1.0 + rainStrength * 0.45), 0.0, 1.0);
+        float twilightFogSoftening = mix(1.0, 0.58, skyTwilightMask(worldTime));
+        fogFactor = clamp(fogFactor + horizonFog * HORIZON_FOG_PULL * twilightFogSoftening * (1.0 + rainStrength * 0.45), 0.0, 1.0);
         vec3 skyFogColor = getSkyFogColor(worldDir, color, worldTime, rainStrength);
         vec3 ambientFogColor = getAmbientFogColor(skyFogColor, color, FOG_AMBIENT_PULL);
         color = applyFog(color, ambientFogColor, fogFactor);

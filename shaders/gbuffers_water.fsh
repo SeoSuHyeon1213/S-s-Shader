@@ -16,9 +16,8 @@ varying float isWater;
 
 #include "/lib/sky.glsl"
 
-/* DRAWBUFFERS:02 */
+/* DRAWBUFFERS:023 */
 
-const vec3 WATER_TINT = vec3(0.62, 0.82, 1.00);
 const float WATER_MIN_ALPHA = 0.42;
 const float WATER_MAX_ALPHA = 0.72;
 const float WATER_WAVE_NORMAL_STRENGTH = 0.16;
@@ -51,15 +50,17 @@ void main() {
     vec3 lightColor = texture2D(lightmap, lmCoord).rgb;
     float ripple = waterRipple(texCoord, frameTimeCounter) * isWater;
     vec3 waterNormal = getWaterWaveNormal(texCoord, frameTimeCounter, normalize(viewNormal));
+    vec3 worldWaterNormal = normalize((gbufferModelViewInverse * vec4(waterNormal, 0.0)).xyz);
     float facing = clamp(abs(waterNormal.z), 0.0, 1.0);
     float fresnel = pow(1.0 - facing, 2.0) * isWater;
     float specular = getWaterSpecular(waterNormal, ripple) * isWater;
     vec3 worldDir = normalize((gbufferModelViewInverse * vec4(normalize(viewDir), 0.0)).xyz);
     vec3 skyReflection = getSkyWaterReflectionColor(worldDir, worldTime, rainStrength);
+    vec3 waterTint = getSkyWaterTint(worldDir, worldTime, rainStrength);
 
     vec3 baseColor = albedo.rgb * lightColor;
-    vec3 waterColor = mix(baseColor, baseColor * WATER_TINT, 0.34);
-    waterColor += WATER_TINT * (0.018 + fresnel * 0.030 + ripple * 0.008) * isWater;
+    vec3 waterColor = mix(baseColor, baseColor * waterTint, 0.34);
+    waterColor += waterTint * (0.018 + fresnel * 0.030 + ripple * 0.008) * isWater;
     waterColor += skyReflection * (fresnel * 0.055 + specular * 0.050) * isWater;
 
     vec3 outColor = mix(baseColor, waterColor, isWater);
@@ -70,4 +71,7 @@ void main() {
 
     // colortex2 material masks: R = wet floor, G = wall, B = lava, A = water.
     gl_FragData[1] = vec4(0.0, 0.0, 0.0, isWater);
+
+    vec3 encodedNormal = normalize(worldWaterNormal) * 0.5 + 0.5;
+    gl_FragData[2] = vec4(encodedNormal, isWater);
 }
