@@ -2,7 +2,7 @@
 
 #define SHADOW_MODE 1 // Shadow filter mode: 0 = Poisson PCF, 1 = PCSS blocker search [0 1]
 
-const float SHADOW_DARKNESS = 0.54;
+const float SHADOW_DARKNESS = 0.66;
 const float SHADOW_FADE_START = 0.58;
 const float SHADOW_BIAS = 0.0012;
 const float SHADOW_SLOPE_BIAS = 2.4;
@@ -29,7 +29,7 @@ float getShadowDayFactor(int worldTime) {
     float dayMask = sunrise * sunset;
 
     // Moon shadows stay subtle so night scenes keep readability.
-    return max(dayMask, (1.0 - dayMask) * 0.18);
+    return max(dayMask, (1.0 - dayMask) * 0.42);
 }
 
 float getShadowBias(vec3 shadowPos, float viewDistance, float farPlane) {
@@ -222,7 +222,7 @@ vec3 getSkyShadowTint(vec3 worldDir, int worldTime, float rainStrength) {
 
 vec3 applyShadow(vec3 color, float visibility, float sceneMask, vec3 worldDir, int worldTime, float rainStrength) {
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    float darkSurfaceProtection = smoothstep(0.035, 0.34, luma);
+    float darkSurfaceProtection = mix(0.48, 1.0, smoothstep(0.035, 0.34, luma));
     float shadowAmount = (1.0 - visibility) * SHADOW_DARKNESS * darkSurfaceProtection * sceneMask;
     vec3 shadowTint = getSkyShadowTint(worldDir, worldTime, rainStrength);
     return mix(color, color * shadowTint, shadowAmount);

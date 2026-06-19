@@ -11,13 +11,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - 파스텔 톤을 유지하면서 색감, 채도, 노출, 대비를 게임 플레이에 맞게 조정.
 - 들고 있는 횃불과 설치된 횃불의 색과 체감 밝기를 비슷하게 맞추고, 실내/동굴에서는 강하게 낮 야외에서는 약하게 보정.
 - shadow map 기반 그림자, Poisson PCF, PCSS, contact shadow를 단계적으로 강화해 바닐라보다 뚜렷한 입체감 구현.
-- 현재 그림자 구현률 70-78% 수준에서 세부 caster rule, cascade/distance split 그림자 안정화, translucent/colored shadow를 다음 목표로 진행.
+- 현재 그림자 구현률 65-72% 수준에서 normal buffer 기반 조명 고도화, 세부 caster rule, cascade/distance split 그림자 안정화를 다음 목표로 진행.
 - 물 전용 `gbuffers_water`와 water mask 기반 SSR을 확장해 sky reflection, Fresnel, ripple, rough reflection을 자연스럽게 개선.
 - 비 오는 날 wet floor/wall mask 기반 젖은 표면 하이라이트와 rain exposure 반응 강화.
 - lava, water, wet floor, wall 등 material mask 구조를 유지해 블록/재질별 효과를 분리.
 - bloom, fog, vignette, dithering, tone mapping을 통합해 밴딩과 과노출을 줄이고 부드러운 화면 분위기 유지.
 - NeOculus/Embeddium 환경에서 shaderpack zip 구조와 GLSL 호환성을 계속 검증.
 - 추후 개선 목표: cascade shadow map, translucent/colored shadow, material/caster rule, water SSR binary search, roughness blur, sky fallback, normal 기반 wet specular BRDF.
+- 그림자 관하여 다음과 같은 항목을 중요시 할 예정
+foliage/glass/emissive caster rule 세분화
+PCSS sample option 확장
+cascade/distance split 안정화
 
 ## In-Game Tuning Checklist
 
@@ -92,10 +96,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - shadow map 샘플링, PCF, 거리 fade, 파스텔 그림자 tint 추가
 
 ### Changed
-- `shaders/lib/lighting.glsl`
-  - normal buffer 기반 diffuse/shadow shading을 실제 `NdotL` 중심으로 강화
-  - `applyTerrainFormLighting()`에서 normal buffer 신뢰도(`normalMask`)를 사용해 direct diffuse, back-face form shadow, shadow map 기반 cast shadow를 분리 계산
-  - 그림자 영역에서는 sky shadow tint를 사용해 면 방향과 shadow visibility가 함께 어두워지도록 조정
 - `shaders/gbuffers_terrain.*`, `shaders/gbuffers_water.fsh`, `shaders/composite.fsh`, `shaders/final.fsh`, `shaders/lib/lighting.glsl`, `shaders/shaders.properties`
   - `colortex3` 기반 normal buffer 추가
   - terrain pass는 world normal을, water pass는 wave-adjusted world normal을 `colortex3.rgb`에 인코딩하고 `a`에 normal 유효 마스크를 기록
@@ -205,29 +205,29 @@ Options are grouped under the `MOOD` screen in Iris.
 
 ## Current Shadow Implementation Status
 
-- 현재 그림자 구현률 추정: 약 70-78%.
-- 현재 상태: PCSS가 기본 활성화되었고, normal buffer 기반 `NdotL` diffuse/shadow shading까지 적용되어 바닐라보다 더 분명한 그림자 대비와 지형 입체감을 목표로 조정된 상태입니다.
+- 현재 그림자 구현률 추정: 약 65-72%.
+- 현재 상태: PCSS가 기본 활성화되었고, shadow/contact shadow 강도가 올라가 바닐라보다 더 분명한 그림자 대비를 목표로 조정된 상태입니다.
 - 구현된 부분:
   - `shadowtex0`, `shadowModelView`, `shadowProjection` 기반 shadow map 샘플링.
   - `shadowMapResolution = 2048`, `shadowDistance = 96.0` 설정.
   - `SHADOW_MODE = 0` 선택 경로의 8-sample Poisson PCF.
   - `SHADOW_MODE = 1` 기본 경로의 8-sample blocker search + 8-sample filter PCSS.
   - `SHADOW_DARKNESS = 0.54` 기반 강화된 shadow tint.
-  - `colortex3` normal buffer 기반 direct diffuse, back-face form shadow, shadow map 기반 cast shadow 조합.
   - `CONTACT_SHADOW_INTENSITY = 0.4` 기반 강화된 screen-space contact shadow.
+  - wet floor/wall mask를 활용한 terrain form lighting 근사 diffuse shading.
   - shadow pass alpha cutout 처리 및 water/lava/glass 계열 solid shadow caster 제외.
   - 거리 fade, shadow map edge fade, 날씨 fade, 낮/밤 fade, sky color 기반 shadow tint.
   - 비 오는 날 wet surface 반응을 위한 shadow 기반 rain exposure 보조 함수.
 - 현재 한계:
-  - normal 기반 diffuse는 적용되었지만, 블록/재질별 roughness와 BRDF 수준의 고급 조명은 아직 없습니다.
+  - terrain form lighting은 `colortex3` normal buffer를 우선 사용하며, normal이 없는 픽셀에서는 wet floor/wall mask 기반 근사를 fallback으로 사용합니다.
   - screen-space contact shadow는 화면 밖/가려진 정보는 처리하지 못합니다.
   - `shadow.vsh` / `shadow.fsh`의 material rule은 1차 caster 제외 수준이며 foliage 세부 투과/색 그림자는 아직 없습니다.
   - cascade shadow map, translucent/colored shadow, material별 shadow tint, directional BRDF 조명 반응은 아직 없습니다.
 - 다음 그림자 개선 우선순위:
-  - foliage/water/glass/emissive 세부 caster rule 개선.
+  - normal buffer 기반 diffuse shading을 바탕으로 foliage/water/glass/emissive 세부 caster rule을 계속 개선.
+  - foliage/water/glass/emissive 세부 caster rule 추가.
   - cascade shadow map 또는 distance split 기반 원거리 그림자 안정화.
   - translucent/colored shadow와 material별 shadow tint 추가.
-  - normal buffer를 wet specular BRDF와 water shading에도 더 적극적으로 연결.
 ## Water SSR Roadmap
 
 - 물 마스크(`colortex2.a`)가 있는 픽셀에만 SSR 적용 완료

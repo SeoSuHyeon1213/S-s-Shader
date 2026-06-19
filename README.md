@@ -1,4 +1,4 @@
-# S-s-Shader
+# S-Shader
 
 ```
 I'm making minecraft shader for Iris.

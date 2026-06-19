@@ -159,8 +159,8 @@ vec3 getSkyFogColor(vec3 worldDir, vec3 sceneColor, int worldTime, float rainStr
     vec3 skyColor = getSkyUnifiedColor(worldDir, worldTime, rainStrength);
     float sceneLuma = dot(sceneColor, vec3(0.2126, 0.7152, 0.0722));
     float skyLuma = max(dot(skyColor, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
-    float ambientMatch = clamp(sceneLuma / skyLuma, 0.35, 1.15);
-    return skyColor * mix(1.0, ambientMatch, 0.28);
+    float ambientMatch = clamp(sceneLuma / skyLuma, 0.18, 1.08);
+    return skyColor * mix(1.0, ambientMatch, 0.46);
 }
 
 float getSkyFogAmount(vec3 worldDir, int worldTime, float rainStrength) {

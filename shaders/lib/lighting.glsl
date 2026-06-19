@@ -11,7 +11,7 @@ const vec3 RAIN_ACCENT_COLOR  = vec3(0.204, 0.137, 0.651); // #3423A6
 const vec3 RAIN_AMBIENT_COLOR = vec3(0.340, 0.360, 0.530); // desaturated rainy ambient tint
 
 const float SUN_HORIZON_GLOW = 0.35; // base highlight warmth during sunrise/sunset
-const float NIGHT_READABILITY_LIFT = 0.10; // subtle blue lift on dark areas at night
+const float NIGHT_READABILITY_LIFT = 0.035; // subtle blue lift on dark areas at night
 
 const float HELD_LIGHT_RANGE_BOOST = 1.25;
 const float HELD_LIGHT_BRIGHTNESS = 0.38;
@@ -149,11 +149,11 @@ vec3 applyTerrainFormLighting(
     vec3 directLight = mix(MOON_LIGHT_COLOR * 0.34, SUN_LIGHT_COLOR, dayMask);
     directLight = mix(directLight, SUN_HORIZON_COLOR, twilight * 0.24);
     vec3 skyShade = getSkyShadowTint(worldDir, worldTime, rainStrength);
-    vec3 normalShade = mix(vec3(0.70, 0.76, 0.88), skyShade, 0.62);
+    vec3 normalShade = mix(vec3(0.60, 0.67, 0.80), skyShade, 0.56);
 
     float diffuseAmount = diffuse * visibility * terrainMask * normalConfidence * mix(0.035, 0.115, dayMask) * (1.0 - rain * 0.35);
-    float formShadow = backFace * terrainMask * normalConfidence * mix(0.045, 0.105, dayMask);
-    float castShadow = shadowMask * terrainMask * normalConfidence * mix(0.070, 0.135, dayMask);
+    float formShadow = backFace * terrainMask * normalConfidence * mix(0.070, 0.105, dayMask);
+    float castShadow = shadowMask * terrainMask * normalConfidence * mix(0.105, 0.135, dayMask);
     float combinedShadow = clamp(formShadow + castShadow + formShadow * castShadow * 0.8, 0.0, 0.42);
 
     color = mix(color, color * normalShade, combinedShadow);

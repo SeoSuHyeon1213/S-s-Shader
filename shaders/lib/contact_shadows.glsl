@@ -83,7 +83,7 @@ vec3 applyContactShadow(
 
     vec3 tint = getSkyShadowTint(worldDir, worldTime, rainStrength);
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    float surfaceProtection = smoothstep(0.05, 0.34, luma);
+    float surfaceProtection = mix(0.55, 1.0, smoothstep(0.05, 0.34, luma));
     float amount = contact * intensity * surfaceProtection;
 
     return mix(color, color * tint, amount);

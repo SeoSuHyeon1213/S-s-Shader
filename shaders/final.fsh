@@ -46,14 +46,14 @@ const float VIGNETTE_MIN   = 0.6; // never fully black at the edges
 #define FOG_START 0.6 // Fog start, as a fraction of render distance [0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0]
 #define FOG_DENSITY 3.0 // Fog falloff sharpness near the render distance edge [1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 10.0 12.0]
 const float RAIN_FOG_PULL = 0.3; // How much rain pulls the fog start closer (fraction of FOG_START)
-const float FOG_AMBIENT_PULL = 0.25; // Keep fog stable while still dimming slightly in dark scenes
-const float HORIZON_FOG_PULL = 0.18; // Blends distant terrain into the shared sky horizon curve
+const float FOG_AMBIENT_PULL = 0.55; // Let night fog follow the darkened scene more closely
+const float HORIZON_FOG_PULL = 0.10; // Blends distant terrain into the shared sky horizon curve
 
 // ---- Bloom ----
 #define BLOOM_INTENSITY 0.16 // Bloom strength [0.0 0.05 0.1 0.15 0.16 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.6 0.7 0.8 0.9 1.0]
 
 // ---- Contact Shadows ----
-#define CONTACT_SHADOW_INTENSITY 0.4 // Near-field screen-space contact shadow strength [0.0 0.08 0.16 0.24 0.32 0.4 0.5 0.65 0.8]
+#define CONTACT_SHADOW_INTENSITY 0.65 // Near-field screen-space contact shadow strength [0.0 0.08 0.16 0.24 0.32 0.4 0.5 0.65 0.8]
 
 // ---- Lighting ----
 #define LIGHTING_STRENGTH 0.5 // Mood lighting strength [0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0]
@@ -127,6 +127,7 @@ void main() {
         float horizonFog = skyHorizonMask(worldDir) * smoothstep(far * 0.35, far, dist);
         float twilightFogSoftening = mix(1.0, 0.58, skyTwilightMask(worldTime));
         fogFactor = clamp(fogFactor + horizonFog * HORIZON_FOG_PULL * twilightFogSoftening * (1.0 + rainStrength * 0.45), 0.0, 1.0);
+        fogFactor *= mix(0.68, 1.0, skyDayMask(worldTime));
         vec3 skyFogColor = getSkyFogColor(worldDir, color, worldTime, rainStrength);
         vec3 ambientFogColor = getAmbientFogColor(skyFogColor, color, FOG_AMBIENT_PULL);
         color = applyFog(color, ambientFogColor, fogFactor);
