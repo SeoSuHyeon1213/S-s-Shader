@@ -259,6 +259,8 @@ vec3 applyWaterSurface(
     vec2 uv,
     float sceneMask,
     float waterMask,
+    vec3 worldNormal,
+    float viewDistance,
     vec3 skyReflectionColor,
     float rainStrength,
     float frameTimeCounter,
@@ -267,22 +269,35 @@ vec3 applyWaterSurface(
     float mask = clamp(waterMask, 0.0, 1.0) * sceneMask;
     if (mask <= 0.001) return color;
 
-    float ripple = getWetReflectionStreak(uv * vec2(1.0, 0.72), frameTimeCounter);
-    float rainBoost = mix(1.0, 1.25, clamp(rainStrength, 0.0, 1.0));
-    vec3 waterTint = vec3(0.58, 0.76, 1.0);
-    vec3 softReflection = mix(skyReflectionColor, waterTint, 0.35);
-    vec2 roughOffset = vec2(0.0018, 0.0012) * (1.0 + rainStrength * 1.5);
+    vec3 waterNormal = normalize(worldNormal);
+    float verticalWater = smoothstep(0.30, 0.86, 1.0 - abs(waterNormal.y));
+    float nearWater = 1.0 - smoothstep(6.0, 24.0, viewDistance);
+    float waterfallMask = verticalWater * nearWater;
+
+    float ripple = getWetReflectionStreak(uv * vec2(0.72, 1.35), frameTimeCounter);
+    float flowA = sin((uv.y - frameTimeCounter * 0.060) * 42.0 + uv.x * 9.0);
+    float flowB = sin((uv.y - frameTimeCounter * 0.038) * 19.0 - uv.x * 15.0);
+    float flow = (flowA * 0.55 + flowB * 0.45) * 0.5 + 0.5;
+    float rainBoost = mix(1.0, 1.18, clamp(rainStrength, 0.0, 1.0));
+    vec3 waterTint = vec3(0.44, 0.62, 0.86);
+    vec3 deepWaterTint = mix(vec3(0.07, 0.14, 0.24), waterTint, 0.38);
+    vec3 softReflection = mix(skyReflectionColor, waterTint, 0.42);
+    vec2 roughOffset = vec2(0.0012, 0.0008) * (1.0 + rainStrength);
     vec3 roughReflection =
         texture2D(sceneTexture, uv + roughOffset).rgb * 0.25 +
         texture2D(sceneTexture, uv - roughOffset).rgb * 0.25 +
         texture2D(sceneTexture, uv + roughOffset.yx).rgb * 0.25 +
         texture2D(sceneTexture, uv - roughOffset.yx).rgb * 0.25;
-    float reflectionBrightness = smoothstep(0.25, 1.05, getLuminance(roughReflection));
+    float reflectionLuma = getLuminance(roughReflection);
+    float reflectionBrightness = smoothstep(0.30, 0.95, reflectionLuma) * (1.0 - smoothstep(1.05, 1.55, reflectionLuma));
 
-    color = mix(color, color * vec3(0.88, 0.96, 1.08), mask * 0.28);
-    vec3 skyMatchedReflection = mix(roughReflection * vec3(0.72, 0.88, 1.08), skyReflectionColor, 0.18);
-    color = mix(color, skyMatchedReflection, mask * intensity * reflectionBrightness * 0.12);
-    color += softReflection * mask * intensity * rainBoost * (0.045 + ripple * 0.04);
+    color = mix(color, color * vec3(0.86, 0.95, 1.06), mask * 0.22 * (1.0 - waterfallMask * 0.55));
+    color = mix(color, mix(color * deepWaterTint, color * vec3(0.55, 0.72, 0.95), 0.38 + flow * 0.18), mask * waterfallMask * 0.34);
+    vec3 skyMatchedReflection = mix(roughReflection * vec3(0.62, 0.78, 0.96), skyReflectionColor, 0.32 + waterfallMask * 0.34);
+    float reflectionAmount = mask * intensity * reflectionBrightness * mix(0.10, 0.025, waterfallMask);
+    color = mix(color, skyMatchedReflection, reflectionAmount);
+    color += softReflection * mask * intensity * rainBoost * (0.025 + ripple * 0.018) * (1.0 - waterfallMask * 0.72);
+    color += waterTint * mask * waterfallMask * (0.010 + flow * 0.012);
 
     return color;
 }

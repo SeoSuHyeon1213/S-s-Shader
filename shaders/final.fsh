@@ -109,7 +109,7 @@ void main() {
     color = applyTerrainFormLighting(color, worldDir, sceneMask, terrainWetMask, terrainWallMask, shadowVisibility, worldNormal, normalMask, worldTime, rainStrength);
 
     // Mood lighting
-    color = applyMoodLighting(color, viewPos, sceneMask, LIGHTING_STRENGTH, rainStrength, worldTime, heldBlockLightValue, heldBlockLightValue2, lavaMask, frameTimeCounter, TORCH_LIGHT_INTENSITY, DAY_LIGHT_STRENGTH, NIGHT_LIGHT_STRENGTH, SUNSET_GLOW_STRENGTH);
+    color = applyMoodLighting(color, viewPos, sceneMask, LIGHTING_STRENGTH, rainStrength, worldTime, heldBlockLightValue, heldBlockLightValue2, shadowVisibility, lavaMask, frameTimeCounter, TORCH_LIGHT_INTENSITY, DAY_LIGHT_STRENGTH, NIGHT_LIGHT_STRENGTH, SUNSET_GLOW_STRENGTH);
 
     // Rain-wide wet highlight, then surface-biased fake reflection
     color = applyGlobalWetHighlight(color, sceneMask, surfaceRainStrength, RAIN_REFLECTION_INTENSITY);
@@ -117,8 +117,8 @@ void main() {
     color = applyWetTerrainScreenReflection(color, colortex0, texCoord, worldDir, depth, sceneMask, terrainWetMask, terrainWallMask, skyReflectionColor, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
     color = applyWetWallRunoff(color, texCoord, worldDir, depth, sceneMask, terrainWallMask, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
     color = applyWetSpecularBRDF(color, worldDir, depth, sceneMask, terrainWetMask, terrainWallMask, surfaceRainStrength, worldTime, RAIN_REFLECTION_INTENSITY);
-    color = applyWaterSurface(color, colortex0, texCoord, sceneMask, waterMask, skyReflectionColor, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
-    color = applyWaterSSR(color, colortex0, depthtex0, texCoord, viewPos, waterMask, skyReflectionColor, surfaceRainStrength, frameTimeCounter, gbufferProjection, gbufferProjectionInverse, RAIN_REFLECTION_INTENSITY);
+    color = applyWaterSurface(color, colortex0, texCoord, sceneMask, waterMask, worldNormal, dist, skyReflectionColor, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
+    color = applyWaterSSR(color, colortex0, depthtex0, texCoord, viewPos, waterMask, worldNormal, dist, skyReflectionColor, surfaceRainStrength, frameTimeCounter, gbufferProjection, gbufferProjectionInverse, RAIN_REFLECTION_INTENSITY);
 
     // Fog
     float fogStartRatio = FOG_START * (1.0 - rainStrength * RAIN_FOG_PULL);
@@ -128,8 +128,11 @@ void main() {
         float twilightFogSoftening = mix(1.0, 0.58, skyTwilightMask(worldTime));
         fogFactor = clamp(fogFactor + horizonFog * HORIZON_FOG_PULL * twilightFogSoftening * (1.0 + rainStrength * 0.45), 0.0, 1.0);
         fogFactor *= mix(0.68, 1.0, skyDayMask(worldTime));
+        float shadowFogMask = (1.0 - clamp(shadowVisibility, 0.0, 1.0)) * sceneMask;
+        fogFactor *= mix(1.0, 0.72, shadowFogMask);
         vec3 skyFogColor = getSkyFogColor(worldDir, color, worldTime, rainStrength);
-        vec3 ambientFogColor = getAmbientFogColor(skyFogColor, color, FOG_AMBIENT_PULL);
+        float shadowAwareFogPull = mix(FOG_AMBIENT_PULL, 0.82, shadowFogMask);
+        vec3 ambientFogColor = getAmbientFogColor(skyFogColor, color, shadowAwareFogPull);
         color = applyFog(color, ambientFogColor, fogFactor);
     }
 

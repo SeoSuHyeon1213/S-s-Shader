@@ -3,6 +3,62 @@
 All notable changes to this shader pack will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
+## 2026-06-20 - Held Torch Color Match
+
+### Changed
+
+- 들고 있는 횃불 조명이 뿌옇고 흰색으로 뜨는 현상을 줄이기 위해 `TORCH_LIGHT_COLOR`, `TORCH_EDGE_COLOR`를 설치 횃불에 가까운 따뜻한 주황 계열로 재조정.
+- held torch의 edge lighting이 전체 색을 흰색으로 들어 올리지 않도록 `vec3(1.0) + tint` 방식 대신 따뜻한 곱셈 tint 중심으로 변경.
+- `HELD_LIGHT_AMBIENT`, `HELD_LIGHT_BRIGHTNESS`, 어두운 실내 boost를 낮춰 횃불을 들었을 때 안개처럼 번지는 밝기를 줄임.
+- 밝은 표면에서 held torch가 과하게 탈색되지 않도록 surface protection 범위를 조정.
+
+### Notes
+
+- 목표는 설치된 횃불 lightmap과 비슷한 따뜻한 주황빛을 유지하면서, 들고 있는 횃불의 흰색 haze를 줄이는 것.
+- 실제 게임에서는 밤 숲, 동굴 벽, 밝은 돌/눈 블록 근처에서 설치 횃불과 들고 있는 횃불 색을 비교해야 함.
+## 2026-06-19 - Waterfall Reflection Stabilization
+
+### Changed
+
+- 가까운 수직 물/폭포에서 screen-space reflection과 sky fallback 반사가 하얀 반점처럼 튀는 현상을 줄이기 위해 `worldNormal`과 view distance 기반 `waterfallMask`를 추가.
+- `applyWaterSurface()`가 수직/근거리 물에서는 반사량을 줄이고, 깊은 물 흡수색과 부드러운 흐름 음영을 더하도록 변경.
+- `applyWaterSSR()`가 가까운 폭포형 물에서는 SSR hit reflection과 sky fallback reflection을 크게 감쇠하도록 변경.
+- `gbuffers_water.fsh`의 wave normal 강도와 specular/sky reflection 출력을 낮춰 가까운 물기둥의 반짝임이 점처럼 튀지 않게 조정.
+
+### Notes
+
+- 평평한 호수/바다 표면의 반사는 유지하면서, 카메라에 가까운 수직 물은 사실적인 어두운 투과/흡수 느낌에 더 가깝게 조정함.
+- 실제 게임에서는 폭포 가까이, 동굴 물줄기, 넓은 수면을 각각 확인해 SSR 약화가 과하지 않은지 봐야 함.
+## 2026-06-19 - Held Item Opaque Pass
+
+### Added
+
+- `gbuffers_hand.vsh/fsh` 추가.
+- `gbuffers_hand_water.vsh/fsh` 추가.
+- `gbuffers_entities.vsh/fsh` 추가.
+
+### Fixed
+
+- 손에 든 아이템이 일부 투과되어 보일 수 있는 문제를 줄이기 위해 hand/entity 전용 패스에서 `colortex0.a`를 항상 `1.0`으로 출력.
+- hand/entity 패스에서 `colortex2` material mask를 `vec4(0.0)`으로 초기화해 이전 terrain/water mask가 섞이지 않도록 처리.
+- hand/entity 패스에서도 normal buffer(`colortex3`)를 기록해 final 단계의 normal 기반 shading이 안정적으로 동작하도록 정리.
+
+### Notes
+
+- 이 변경은 아이템 자체 투명 텍스처의 cutout은 유지하면서, 렌더 패스 전체가 반투명 표면처럼 합성되는 문제를 막는 목적입니다.
+## 2026-06-19 - Normal Shading and Shadow-Aware Fog
+
+### Changed
+
+- normal buffer 기반 `NdotL` diffuse와 form shadow 강도를 높여 블록 면 방향에 따른 입체감을 강화.
+- shadow map으로 가려진 픽셀에서는 mood lighting의 shadow lift와 highlight 적용량을 줄이도록 `applyMoodLighting()`에 `shadowVisibility`를 전달.
+- fog 단계에서 shadow map 마스크를 사용해 그림자 영역의 fog factor를 낮추고, fog color가 장면의 어두운 밝기를 더 따라가도록 `shadowAwareFogPull`을 추가.
+- normal 기반 form/cast shadow의 최대 합성치를 `0.42`에서 `0.52`로 높여 지형과 나무 밑 그림자 대비를 강화.
+
+### Notes
+
+- 이번 변경은 그림자를 더 진하게 만드는 것뿐 아니라, 후처리 fog/ambient가 그림자를 다시 밝게 덮는 문제를 줄이는 데 초점을 둠.
+- 실제 게임에서는 낮 지형 경사면, 밤 숲, 횃불 주변에서 그림자 대비와 fog 밝기 과보정 여부를 확인해야 함.
 
 ## Goals / 목표사항
 

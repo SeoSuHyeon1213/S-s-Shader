@@ -85,6 +85,8 @@ vec3 applyWaterSSR(
     vec2 uv,
     vec3 viewPos,
     float waterMask,
+    vec3 worldNormal,
+    float viewDistance,
     vec3 skyReflectionColor,
     float rainStrength,
     float frameTimeCounter,
@@ -95,14 +97,18 @@ vec3 applyWaterSSR(
     float mask = clamp(waterMask, 0.0, 1.0);
     if (mask <= 0.001) return color;
 
+    float verticalWater = smoothstep(0.30, 0.86, 1.0 - abs(normalize(worldNormal).y));
+    float nearWater = 1.0 - smoothstep(6.0, 24.0, viewDistance);
+    float waterfallMask = verticalWater * nearWater;
+
     vec3 viewDir = normalize(-viewPos);
     vec3 normal = getSSRWaterNormal(uv, frameTimeCounter);
     vec3 rayDir = reflect(viewDir, normal);
     float fresnel = pow(1.0 - clamp(dot(viewDir, normal), 0.0, 1.0), 2.0);
-    float roughness = clamp(0.35 + rainStrength * 0.45 + length(normal.xy) * 1.8, 0.25, 1.0);
+    float roughness = clamp(0.48 + rainStrength * 0.36 + length(normal.xy) * 1.5 + waterfallMask * 0.32, 0.35, 1.0);
 
     if (rayDir.z > -0.02) {
-        float fallbackAmount = mask * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH;
+        float fallbackAmount = mask * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH * (1.0 - waterfallMask * 0.85);
         return mix(color, skyReflectionColor, fallbackAmount);
     }
 
@@ -141,9 +147,9 @@ vec3 applyWaterSSR(
         }
     }
 
-    float reflectionAmount = mask * hitFade * fresnel * intensity * 0.45;
-    float fallbackAmount = mask * (1.0 - hitFade) * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH;
-    vec3 reflectionColor = mix(skyReflectionColor, hitColor * vec3(0.72, 0.86, 1.08), hitFade);
+    float reflectionAmount = mask * hitFade * fresnel * intensity * 0.45 * (1.0 - waterfallMask * 0.82);
+    float fallbackAmount = mask * (1.0 - hitFade) * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH * (1.0 - waterfallMask * 0.85);
+    vec3 reflectionColor = mix(skyReflectionColor, hitColor * vec3(0.64, 0.78, 0.96), hitFade);
     color = mix(color, skyReflectionColor, fallbackAmount);
     return mix(color, reflectionColor, reflectionAmount);
 }
