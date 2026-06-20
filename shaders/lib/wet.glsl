@@ -3,12 +3,15 @@
 const vec3 WET_REFLECTION_COLOR = vec3(0.204, 0.137, 0.651); // #3423A6
 const vec3 WET_COOL_HIGHLIGHT   = vec3(0.68, 0.78, 1.00);
 const float WET_SPECULAR_F0 = 0.045;
+const float WET_SPECULAR_PI = 3.14159265;
 const float WET_FLOOR_SPECULAR_POWER = 96.0;
 const float WET_WALL_SPECULAR_POWER = 42.0;
 const float WET_WALL_STREAK_STRENGTH = 0.72;
 const float WET_WALL_DARKEN_STRENGTH = 0.16;
 const float WET_TERRAIN_REFLECTION_STRENGTH = 0.34;
 const float WET_TERRAIN_REFLECTION_OFFSET = 0.026;
+const float WATER_PLANAR_FALLBACK_STRENGTH = 0.18;
+const float WATER_ABSORPTION_DISTANCE = 42.0;
 
 vec3 applyGlobalWetHighlight(
     vec3 color,
@@ -132,16 +135,65 @@ vec3 getWetApproxNormal(vec3 worldDir, float terrainWetMask, float terrainWallMa
     return normalize(mix(floorNormal, wallNormal, wallBlend));
 }
 
-float getWetSpecularBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
+float getWetMaterialResponse(float terrainWetMask, float terrainWallMask) {
+    return clamp(max(terrainWetMask, terrainWallMask), 0.0, 1.0);
+}
+
+float getWetMaterialRoughness(float terrainWetMask, float terrainWallMask) {
+    float floorMask = clamp(terrainWetMask, 0.0, 1.0);
+    float wallMask = clamp(terrainWallMask, 0.0, 1.0);
+    float response = getWetMaterialResponse(floorMask, wallMask);
+    float wallAmount = clamp(wallMask / max(floorMask + wallMask, 0.001), 0.0, 1.0);
+
+    float glossyStoneOrGlass = smoothstep(0.58, 0.92, response);
+    float softFoliageOrCrop = 1.0 - smoothstep(0.20, 0.42, response);
+    float woodSoilBand = 1.0 - abs(response - 0.42) / 0.26;
+    woodSoilBand = clamp(woodSoilBand, 0.0, 1.0);
+
+    float roughness = mix(0.64, 0.30, glossyStoneOrGlass);
+    roughness = mix(roughness, 0.56, woodSoilBand * 0.55);
+    roughness = mix(roughness, 0.88, softFoliageOrCrop);
+    roughness += wallAmount * 0.12;
+    return clamp(roughness, 0.18, 0.94);
+}
+
+float getWetMaterialF0(float terrainWetMask, float terrainWallMask) {
+    float response = getWetMaterialResponse(terrainWetMask, terrainWallMask);
+    float glossyStoneOrGlass = smoothstep(0.58, 0.90, response);
+    float softFoliageOrCrop = 1.0 - smoothstep(0.18, 0.38, response);
+    float f0 = mix(0.035, 0.072, glossyStoneOrGlass);
+    f0 = mix(f0, 0.024, softFoliageOrCrop);
+    return clamp(f0, 0.018, 0.085);
+}
+
+float getWetMaterialSpecularWeight(float terrainWetMask, float terrainWallMask) {
+    float response = getWetMaterialResponse(terrainWetMask, terrainWallMask);
+    float softFoliageOrCrop = 1.0 - smoothstep(0.18, 0.42, response);
+    float glossyStoneOrGlass = smoothstep(0.58, 0.88, response);
+    return clamp(mix(0.48, 1.18, glossyStoneOrGlass) * mix(1.0, 0.42, softFoliageOrCrop), 0.18, 1.22);
+}
+
+float getWetSpecularBRDF(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness, float f0) {
     vec3 halfDir = normalize(viewDir + lightDir);
     float noV = clamp(dot(normal, viewDir), 0.0, 1.0);
     float noL = clamp(dot(normal, lightDir), 0.0, 1.0);
     float noH = clamp(dot(normal, halfDir), 0.0, 1.0);
     float voH = clamp(dot(viewDir, halfDir), 0.0, 1.0);
-    float specPower = mix(WET_FLOOR_SPECULAR_POWER, WET_WALL_SPECULAR_POWER, roughness);
-    float fresnel = WET_SPECULAR_F0 + (1.0 - WET_SPECULAR_F0) * pow(1.0 - voH, 5.0);
-    float specular = pow(noH, specPower) * noL * smoothstep(0.02, 0.35, noV);
-    return specular * fresnel;
+
+    float alpha = max(roughness * roughness, 0.025);
+    float alpha2 = alpha * alpha;
+    float denom = noH * noH * (alpha2 - 1.0) + 1.0;
+    float distribution = alpha2 / max(WET_SPECULAR_PI * denom * denom, 0.0001);
+
+    float k = (roughness + 1.0);
+    k = (k * k) * 0.125;
+    float geometryV = noV / max(noV * (1.0 - k) + k, 0.0001);
+    float geometryL = noL / max(noL * (1.0 - k) + k, 0.0001);
+    float geometry = geometryV * geometryL;
+
+    float fresnel = f0 + (1.0 - f0) * pow(1.0 - voH, 5.0);
+    float specular = distribution * geometry * fresnel;
+    return specular * noL * smoothstep(0.02, 0.30, noV);
 }
 
 vec3 applyWetSpecularBRDF(
@@ -151,6 +203,8 @@ vec3 applyWetSpecularBRDF(
     float sceneMask,
     float terrainWetMask,
     float terrainWallMask,
+    vec3 worldNormal,
+    float normalMask,
     float rainStrength,
     int worldTime,
     float intensity
@@ -161,16 +215,18 @@ vec3 applyWetSpecularBRDF(
     float wetMask = combineWetSurfaceMask(color, depth, sceneMask, floorMask, wallMask) * rain * intensity;
     if (wetMask <= 0.001) return color;
 
-    vec3 normal = getWetApproxNormal(worldDir, floorMask, wallMask);
+    vec3 fallbackNormal = getWetApproxNormal(worldDir, floorMask, wallMask);
+    vec3 normal = normalize(mix(fallbackNormal, normalize(worldNormal), clamp(normalMask, 0.0, 1.0)));
     vec3 viewDir = normalize(-worldDir);
     vec3 lightDir = getWetLightDirection(worldTime);
-    float wallAmount = wallMask * (1.0 - floorMask);
-    float roughness = clamp(wallAmount * 0.7 + (1.0 - floorMask) * 0.2, 0.0, 1.0);
-    float specular = getWetSpecularBRDF(normal, viewDir, lightDir, roughness);
+    float roughness = getWetMaterialRoughness(floorMask, wallMask);
+    float f0 = getWetMaterialF0(floorMask, wallMask);
+    float materialWeight = getWetMaterialSpecularWeight(floorMask, wallMask);
+    float specular = getWetSpecularBRDF(normal, viewDir, lightDir, roughness, f0) * materialWeight;
     float lumaProtection = 1.0 - smoothstep(0.82, 1.35, getLuminance(color));
     vec3 specularColor = getWetSpecularColor(worldTime, rain);
 
-    color += specularColor * specular * wetMask * lumaProtection * 1.85;
+    color += specularColor * specular * wetMask * lumaProtection * 2.35;
     return color;
 }
 
@@ -313,6 +369,33 @@ vec3 applyFakeWetReflection(
     return color;
 }
 
+vec3 sampleWaterPlanarFallback(sampler2D sceneTexture, vec2 uv, vec3 worldDir, float roughness, float flow) {
+    vec2 mirroredUv = vec2(uv.x + worldDir.x * 0.018, 1.0 - uv.y + 0.075 + worldDir.y * 0.035);
+    mirroredUv += vec2(flow - 0.5, 0.5 - flow) * 0.010;
+    mirroredUv = clamp(mirroredUv, vec2(0.001), vec2(0.999));
+
+    vec2 blur = vec2(0.0065, 0.0035) * roughness;
+    vec3 reflection = texture2D(sceneTexture, mirroredUv).rgb * 0.36;
+    reflection += texture2D(sceneTexture, clamp(mirroredUv + blur, vec2(0.001), vec2(0.999))).rgb * 0.16;
+    reflection += texture2D(sceneTexture, clamp(mirroredUv - blur, vec2(0.001), vec2(0.999))).rgb * 0.16;
+    reflection += texture2D(sceneTexture, clamp(mirroredUv + blur.yx, vec2(0.001), vec2(0.999))).rgb * 0.16;
+    reflection += texture2D(sceneTexture, clamp(mirroredUv - blur.yx, vec2(0.001), vec2(0.999))).rgb * 0.16;
+    return reflection;
+}
+
+vec3 applyWaterDepthAbsorption(vec3 color, vec3 waterTint, float viewDistance, float verticalWater, float flow, float mask) {
+    float horizontalWater = 1.0 - verticalWater;
+    float depthAmount = smoothstep(3.0, WATER_ABSORPTION_DISTANCE, viewDistance) * horizontalWater;
+    float flowFoam = smoothstep(0.62, 1.0, flow) * verticalWater;
+    vec3 shallowTint = vec3(0.50, 0.72, 0.92);
+    vec3 deepTint = mix(vec3(0.035, 0.090, 0.160), waterTint, 0.35);
+
+    color = mix(color, color * shallowTint, mask * horizontalWater * 0.12);
+    color = mix(color, color * deepTint, mask * depthAmount * 0.42);
+    color += waterTint * mask * flowFoam * 0.020;
+    return color;
+}
+
 vec3 applyWaterSurface(
     vec3 color,
     sampler2D sceneTexture,
@@ -348,11 +431,15 @@ vec3 applyWaterSurface(
     float roughness = clamp(0.34 + rainStrength * 0.22 + waterfallMask * 0.38 + (1.0 - horizontalWater) * 0.18, 0.25, 1.0);
     vec3 softReflection = mix(skyReflectionColor, waterTint, 0.32 + roughness * 0.24);
     vec3 roughReflection = mix(skyReflectionColor, waterTint, roughness * 0.28 + flow * 0.06);
+    vec3 planarFallback = sampleWaterPlanarFallback(sceneTexture, uv, worldDir, roughness, flow);
     float reflectionBrightness = smoothstep(0.08, 0.72, getLuminance(skyReflectionColor));
+    float planarLuma = smoothstep(0.10, 0.90, getLuminance(planarFallback));
 
     color = mix(color, color * vec3(0.86, 0.95, 1.06), mask * 0.18 * horizontalWater);
+    color = applyWaterDepthAbsorption(color, waterTint, viewDistance, verticalWater, flow, mask);
     color = mix(color, mix(color * deepWaterTint, color * vec3(0.55, 0.72, 0.95), 0.38 + flow * 0.18), mask * waterfallMask * 0.34);
-    vec3 skyMatchedReflection = mix(roughReflection, skyReflectionColor, fresnel * 0.42 + waterfallMask * 0.24);
+    vec3 stableReflection = mix(roughReflection, planarFallback * vec3(0.58, 0.76, 0.96), planarLuma * WATER_PLANAR_FALLBACK_STRENGTH * horizontalWater);
+    vec3 skyMatchedReflection = mix(stableReflection, skyReflectionColor, fresnel * 0.42 + waterfallMask * 0.24);
     float reflectionAmount = mask * intensity * reflectionBrightness * mix(0.035 + fresnel * 0.105, 0.012, waterfallMask) * horizontalWater;
     color = mix(color, skyMatchedReflection, reflectionAmount);
     color += softReflection * mask * intensity * rainBoost * (0.018 + ripple * 0.010 + fresnel * 0.032) * horizontalWater;

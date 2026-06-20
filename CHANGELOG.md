@@ -4,6 +4,91 @@ All notable changes to this shader pack will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-06-20 - Hand Pass Shadow Isolation
+
+### Fixed
+
+- Prevented held hands/items from receiving terrain shadow map visibility, contact shadow, normal form lighting, and global wet highlights.
+- Added a final-pass terrain receiver mask based on `colortex2` material channels, so only terrain/water/lava-marked pixels enter terrain shadow and wet-surface paths.
+- Stopped `applyTerrainFormLighting()` from treating any valid normal buffer pixel as terrain by itself.
+
+### Notes
+
+- Hand/entity passes still write normals for compatibility, but final terrain shading now requires material masks as well.
+- This is likely related to player-movement shadow instability because held hands/items move with the camera while terrain shadow code expected world-stable receivers.
+
+## 2026-06-20 - Terrain-Only PCSS Expression Restore
+
+### Changed
+
+- Reduced `shadowIntervalSize` from `16.0` to `8.0` for a better stability/detail balance.
+- Kept `ENABLE_CONTACT_SHADOWS = 0` and hand/entity receiver isolation intact.
+- Restored terrain-only PCSS expression by letting blocker-depth penumbra drive the filter radius again.
+- Tuned PCSS values to `PCSS_LIGHT_SIZE = 16.0`, `PCSS_MIN_RADIUS = 0.65`, and `PCSS_MAX_RADIUS = 2.8`.
+- Increased `SHADOW_DARKNESS` to `0.74` and cooled/darkened shadow tint to reduce the vanilla-like flat look.
+
+### Notes
+
+- If walking remains stable, `shadowIntervalSize = 4.0` is the next detail-oriented test value.
+
+## 2026-06-20 - Player-Movement Shadow Stability
+
+### Changed
+
+- Increased `shadowIntervalSize` from `1.0` to `16.0` so the shadow projection no longer follows every small player movement.
+- Changed `ENABLE_CONTACT_SHADOWS` default from `1` to `0` because screen-space contact shadows move with the camera by design.
+- Removed view-distance-dependent shadow bias, PCF radius, PCSS search radius, and shadow strength fade from the main shadow map path.
+- Added stable PCF/PCSS radius constants so a surface keeps the same shadow filtering while the player moves.
+- Changed partial shadow caster dithering from `gl_FragCoord` to texture-coordinate cells to reduce reprojection crawling.
+- Fixed contact shadow sampling radius so it no longer scales while the player walks toward or away from geometry.
+
+### Notes
+
+- Shadow map edge fade and weather/time fade still apply, but ordinary player movement should no longer continuously change shadow softness or strength.
+- `shadowIntervalSize = 16.0` was used as a maximum-stability diagnostic value; current balanced default is `8.0`.
+
+## 2026-06-20 - Wet Specular BRDF Material Refinement
+
+### Changed
+
+- Reworked wet specular highlights from a simple Phong-style lobe to a GGX-style microfacet BRDF.
+- `applyWetSpecularBRDF()` now uses the `colortex3` world normal buffer when available, falling back to the older floor/wall normal estimate only when needed.
+- Wet material response values are now interpreted as roughness/F0 hints, so stone/glass-like surfaces stay glossier while foliage/crop-like surfaces remain broad and muted.
+- Wall and floor wet masks now influence roughness separately, reducing harsh vertical streak highlights.
+
+### Notes
+
+- Material-specific behavior is inferred from the existing wet response masks because the current buffer layout does not store a dedicated material ID in the final pass.
+
+## 2026-06-20 - Water Reflection and Absorption Refinement
+
+### Changed
+
+- Increased water SSR ray steps and binary refinement steps for more stable hit placement.
+- Tightened SSR thickness and added hit confidence based on edge fade, ray distance, and refined depth delta.
+- Reworked SSR roughness blur from a 5-tap cross into a softer 9-tap kernel.
+- Added a low-cost planar-style fallback reflection for horizontal water using mirrored screen sampling.
+- Added view-distance-based water absorption and stronger flow/foam separation for vertical water.
+
+### Notes
+
+- This is still not a true planar reflection pass. A real planar pass would need an additional reflected scene render target or loader-specific reflection buffer.
+
+## 2026-06-20 - Material-Aware Shadow Refinement
+
+### Changed
+
+- Refined shadow caster rules for foliage, crop, and glass material groups instead of treating every non-water/non-lava caster as fully opaque.
+- Added stable dithered partial shadow casting for translucent or thin materials in the shadow pass.
+- Added distance-split-style far shadow softening to reduce harsh distant shadow bands without adding a full cascade pipeline.
+- Made final shadow tint and strength react to wet floor/wall, water, and lava masks.
+- Improved normal-based directional lighting with a small BRDF lobe on wet/material-marked terrain.
+
+### Notes
+
+- This is still a single shadow map path, not a true cascaded shadow map implementation.
+- Colored/translucent shadows are approximated through partial caster opacity and material-aware final tint because the current buffer layout only stores a single depth shadow map.
+
 ## 2026-06-20 - Shadow Movement Stabilization
 
 ### Changed
@@ -315,11 +400,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `shadowtex0`, `shadowModelView`, `shadowProjection` 기반 shadow map sampling.
 - `shadowMapResolution = 2048`.
 - `shadowDistance = 96.0`.
-- `shadowIntervalSize = 1.0`.
+- `shadowIntervalSize = 8.0`.
 - `SHADOW_MODE = 0`: 8-sample Poisson PCF.
 - `SHADOW_MODE = 1`: 8-sample blocker search + 8-sample filter PCSS.
-- `SHADOW_DARKNESS = 0.66` 기반 강화된 shadow tint.
-- screen-space contact shadow.
+- `SHADOW_DARKNESS = 0.74` 기반 강화된 shadow tint.
+- screen-space contact shadow option (`ENABLE_CONTACT_SHADOWS = 0` by default for movement stability).
 - normal buffer 기반 terrain form lighting.
 - alpha cutout 처리 및 water/lava/glass 계열 solid shadow caster 제외.
 - 거리 fade, shadow map edge fade, 날씨 fade, 낮/밤 fade, sky color 기반 shadow tint.
@@ -352,7 +437,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - 인게임 Iris/NeOculus 컴파일 로그 반복 확인.
 - 낮, 밤, 동굴, 비, 네더, 엔드 환경별 색감 프리셋 정리.
-- normal 기반 wet specular BRDF 추가 개선.
+- 인게임 스크린샷 기반 wet specular roughness/F0 추가 튜닝.
 - cascade shadow map 또는 distance split 구현.
 - translucent/colored shadow.
 - foliage/glass/emissive material caster rule 세분화.

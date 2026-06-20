@@ -39,7 +39,7 @@ float getContactShadowAmount(
     distanceFade *= smoothstep(0.0, CONTACT_SHADOW_NEAR_FADE, viewDistance);
     if (distanceFade <= 0.001) return 0.0;
 
-    float radiusScale = mix(0.65, 1.55, clamp(viewDistance / CONTACT_SHADOW_FAR_FADE, 0.0, 1.0));
+    float radiusScale = 1.0;
     float occlusion = 0.0;
     float weightSum = 0.0;
 

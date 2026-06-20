@@ -130,7 +130,7 @@ vec3 applyTerrainFormLighting(
     int worldTime,
     float rainStrength
 ) {
-    float materialMask = max(max(floorMask, wallMask), normalMask);
+    float materialMask = max(floorMask, wallMask);
     float terrainMask = clamp(materialMask * sceneMask, 0.0, 1.0);
     if (terrainMask <= 0.001) return color;
 
@@ -143,10 +143,17 @@ vec3 applyTerrainFormLighting(
     float visibility = clamp(shadowVisibility, 0.0, 1.0);
 
     float noL = clamp(dot(normal, lightDir), 0.0, 1.0);
+    vec3 viewDir = normalize(-worldDir);
+    vec3 halfDir = normalize(lightDir + viewDir);
+    float noV = clamp(dot(normal, viewDir), 0.0, 1.0);
+    float noH = clamp(dot(normal, halfDir), 0.0, 1.0);
     float diffuse = noL * noL * (3.0 - 2.0 * noL);
     float backFace = pow(1.0 - noL, 1.35);
+    float grazing = pow(1.0 - noV, 2.0);
     float shadowMask = 1.0 - visibility;
     float normalConfidence = clamp(normalMask, 0.0, 1.0);
+    float wallAmount = clamp(wallMask / max(floorMask + wallMask, 0.001), 0.0, 1.0);
+    float wetAmount = clamp(max(floorMask, wallMask * 0.55), 0.0, 1.0);
 
     vec3 directLight = mix(MOON_LIGHT_COLOR * 0.34, SUN_LIGHT_COLOR, dayMask);
     directLight = mix(directLight, SUN_HORIZON_COLOR, twilight * 0.24);
@@ -154,12 +161,16 @@ vec3 applyTerrainFormLighting(
     vec3 normalShade = mix(vec3(0.52, 0.59, 0.74), skyShade, 0.50);
 
     float diffuseAmount = diffuse * visibility * terrainMask * normalConfidence * mix(0.045, 0.125, dayMask) * (1.0 - rain * 0.35);
+    float brdfLobe = pow(noH, mix(26.0, 72.0, 1.0 - wallAmount)) * noL * visibility;
+    float brdfAmount = brdfLobe * terrainMask * normalConfidence * wetAmount * mix(0.010, 0.035, dayMask) * (1.0 - rain * 0.18);
     float formShadow = backFace * terrainMask * normalConfidence * mix(0.095, 0.130, dayMask);
+    formShadow *= mix(1.0, 0.78, wetAmount * grazing);
     float castShadow = shadowMask * terrainMask * normalConfidence * mix(0.130, 0.160, dayMask);
     float combinedShadow = clamp(formShadow + castShadow + formShadow * castShadow * 0.8, 0.0, 0.52);
 
     color = mix(color, color * normalShade, combinedShadow);
     color += directLight * diffuseAmount;
+    color += directLight * brdfAmount;
     return color;
 }
 vec3 applyMoodLighting(

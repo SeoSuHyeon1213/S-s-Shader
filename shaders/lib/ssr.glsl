@@ -1,9 +1,9 @@
 // Low-cost water-only screen-space reflection utilities
 
-const int SSR_STEPS = 16;
-const int SSR_BINARY_STEPS = 4;
-const float SSR_STEP_SIZE = 0.55;
-const float SSR_THICKNESS = 0.35;
+const int SSR_STEPS = 20;
+const int SSR_BINARY_STEPS = 6;
+const float SSR_STEP_SIZE = 0.48;
+const float SSR_THICKNESS = 0.28;
 const float SSR_MAX_DISTANCE = 48.0;
 const float SSR_ROUGH_BLUR_RADIUS = 0.0045;
 const float SSR_SKY_FALLBACK_STRENGTH = 0.18;
@@ -39,6 +39,13 @@ float getSSRDepthDelta(vec3 rayPos, vec2 hitUv, sampler2D depthTexture, mat4 pro
     return rayPos.z - sceneViewPos.z;
 }
 
+float getSSRHitConfidence(float depthDelta, float rayDistance, vec2 hitUv) {
+    float edgeFade = getScreenEdgeFade(hitUv);
+    float distanceFade = 1.0 - smoothstep(SSR_MAX_DISTANCE * 0.35, SSR_MAX_DISTANCE, rayDistance);
+    float thicknessFade = 1.0 - smoothstep(SSR_THICKNESS * 0.22, SSR_THICKNESS, abs(depthDelta));
+    return clamp(edgeFade * distanceFade * thicknessFade, 0.0, 1.0);
+}
+
 vec3 refineSSRHit(
     vec3 previousRayPos,
     vec3 currentRayPos,
@@ -58,7 +65,7 @@ vec3 refineSSRHit(
         }
 
         float depthDelta = getSSRDepthDelta(midPos, midUv, depthTexture, projectionInverse);
-        if (depthDelta > 0.0) {
+        if (depthDelta > 0.0 || depthDelta < -SSR_THICKNESS * 2.5) {
             endPos = midPos;
         } else {
             startPos = midPos;
@@ -69,12 +76,18 @@ vec3 refineSSRHit(
 }
 
 vec3 sampleSSRReflectionBlur(sampler2D sceneTexture, vec2 hitUv, float roughness) {
-    vec2 radius = vec2(SSR_ROUGH_BLUR_RADIUS * roughness);
-    vec3 color = texture2D(sceneTexture, hitUv).rgb * 0.42;
-    color += texture2D(sceneTexture, clamp(hitUv + vec2( radius.x, 0.0), vec2(0.001), vec2(0.999))).rgb * 0.145;
-    color += texture2D(sceneTexture, clamp(hitUv - vec2( radius.x, 0.0), vec2(0.001), vec2(0.999))).rgb * 0.145;
-    color += texture2D(sceneTexture, clamp(hitUv + vec2(0.0,  radius.y), vec2(0.001), vec2(0.999))).rgb * 0.145;
-    color += texture2D(sceneTexture, clamp(hitUv - vec2(0.0,  radius.y), vec2(0.001), vec2(0.999))).rgb * 0.145;
+    float r = SSR_ROUGH_BLUR_RADIUS * roughness;
+    vec2 radius = vec2(r, r * 0.62);
+    vec2 diag = radius * vec2(0.72, 1.28);
+    vec3 color = texture2D(sceneTexture, hitUv).rgb * 0.30;
+    color += texture2D(sceneTexture, clamp(hitUv + vec2( radius.x, 0.0), vec2(0.001), vec2(0.999))).rgb * 0.115;
+    color += texture2D(sceneTexture, clamp(hitUv - vec2( radius.x, 0.0), vec2(0.001), vec2(0.999))).rgb * 0.115;
+    color += texture2D(sceneTexture, clamp(hitUv + vec2(0.0,  radius.y), vec2(0.001), vec2(0.999))).rgb * 0.115;
+    color += texture2D(sceneTexture, clamp(hitUv - vec2(0.0,  radius.y), vec2(0.001), vec2(0.999))).rgb * 0.115;
+    color += texture2D(sceneTexture, clamp(hitUv + diag, vec2(0.001), vec2(0.999))).rgb * 0.085;
+    color += texture2D(sceneTexture, clamp(hitUv - diag, vec2(0.001), vec2(0.999))).rgb * 0.085;
+    color += texture2D(sceneTexture, clamp(hitUv + diag.yx, vec2(0.001), vec2(0.999))).rgb * 0.085;
+    color += texture2D(sceneTexture, clamp(hitUv - diag.yx, vec2(0.001), vec2(0.999))).rgb * 0.085;
     return color;
 }
 
@@ -105,10 +118,11 @@ vec3 applyWaterSSR(
     vec3 normal = getSSRWaterNormal(uv, frameTimeCounter);
     vec3 rayDir = reflect(viewDir, normal);
     float fresnel = pow(1.0 - clamp(dot(viewDir, normal), 0.0, 1.0), 2.0);
-    float roughness = clamp(0.48 + rainStrength * 0.36 + length(normal.xy) * 1.5 + waterfallMask * 0.32, 0.35, 1.0);
+    float horizontalWater = 1.0 - verticalWater;
+    float roughness = clamp(0.42 + rainStrength * 0.34 + length(normal.xy) * 1.35 + waterfallMask * 0.36, 0.30, 1.0);
 
     if (rayDir.z > -0.02) {
-        float fallbackAmount = mask * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH * (1.0 - waterfallMask * 0.85);
+        float fallbackAmount = mask * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH * horizontalWater;
         return mix(color, skyReflectionColor, fallbackAmount);
     }
 
@@ -138,18 +152,16 @@ vec3 applyWaterSSR(
             refinedUv = clamp(refinedUv, vec2(0.001), vec2(0.999));
 
             hitColor = sampleSSRReflectionBlur(sceneTexture, refinedUv, roughness);
-            float edgeFade = getScreenEdgeFade(refinedUv);
-            float distanceFade = 1.0 - clamp(length(refinedRayPos - viewPos) / SSR_MAX_DISTANCE, 0.0, 1.0);
-            float depthConfidence = 1.0 - smoothstep(SSR_THICKNESS * 0.35, SSR_THICKNESS, abs(depthDelta));
-            hitFade = edgeFade * distanceFade;
-            hitFade *= depthConfidence;
+            float refinedDelta = getSSRDepthDelta(refinedRayPos, refinedUv, depthTexture, projectionInverse);
+            float rayDistance = length(refinedRayPos - viewPos);
+            hitFade = getSSRHitConfidence(refinedDelta, rayDistance, refinedUv);
             break;
         }
     }
 
-    float reflectionAmount = mask * hitFade * fresnel * intensity * 0.45 * (1.0 - waterfallMask * 0.82);
-    float fallbackAmount = mask * (1.0 - hitFade) * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH * (1.0 - waterfallMask * 0.85);
-    vec3 reflectionColor = mix(skyReflectionColor, hitColor * vec3(0.64, 0.78, 0.96), hitFade);
+    float reflectionAmount = mask * hitFade * fresnel * intensity * 0.50 * horizontalWater;
+    float fallbackAmount = mask * (1.0 - hitFade) * fresnel * intensity * SSR_SKY_FALLBACK_STRENGTH * horizontalWater;
+    vec3 reflectionColor = mix(skyReflectionColor, hitColor * vec3(0.68, 0.82, 0.98), hitFade);
     color = mix(color, skyReflectionColor, fallbackAmount);
     return mix(color, reflectionColor, reflectionAmount);
 }

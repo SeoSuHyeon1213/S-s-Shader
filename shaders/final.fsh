@@ -67,7 +67,7 @@ const float HORIZON_FOG_PULL = 0.10; // Blends distant terrain into the shared s
 #define WATER_REFLECTION_MODE 0 // Water reflection mode: 0 = stable sky/fresnel, 1 = weak SSR [0 1]
 
 // ---- Stability / Debug Toggles ----
-#define ENABLE_CONTACT_SHADOWS 1 // Screen-space contact shadows [0 1]
+#define ENABLE_CONTACT_SHADOWS 0 // Screen-space contact shadows, off by default for movement-stable shadows [0 1]
 #define ENABLE_NORMAL_FORM_LIGHTING 1 // Normal based terrain form lighting [0 1]
 #define ENABLE_WET_GROUND_LAYER 1 // Wet darkening/sheen layer for rainy floors [0 1]
 #define ENABLE_WET_SCREEN_REFLECTIONS 1 // Rain puddle screen-space reflection layer [0 1]
@@ -109,22 +109,24 @@ void main() {
     vec3 worldDir = getWorldDirection(viewPos);
     vec3 skyReflectionColor = getSkyWaterReflectionColor(worldDir, worldTime, rainStrength);
     float sceneMask = 1.0 - step(1.0, depth);
-    float shadowVisibility = getShadowVisibility(worldPos, dist, far, sceneMask, worldTime, rainStrength);
-    float rainExposure = getRainExposure(worldPos, dist, far, sceneMask);
+    float terrainReceiverMask = clamp(max(max(terrainWetMask, terrainWallMask), max(lavaMask, waterMask)), 0.0, 1.0);
+    float terrainSceneMask = sceneMask * terrainReceiverMask;
+    float shadowVisibility = getShadowVisibility(worldPos, dist, far, terrainSceneMask, worldTime, rainStrength);
+    float rainExposure = getRainExposure(worldPos, dist, far, terrainSceneMask);
     float surfaceRainStrength = rainStrength * rainExposure;
-    color = applyShadow(color, shadowVisibility, sceneMask, worldDir, worldTime, rainStrength);
+    color = applyShadow(color, shadowVisibility, terrainSceneMask, worldDir, worldTime, rainStrength, terrainWetMask, terrainWallMask, lavaMask, waterMask, worldNormal, normalMask);
 #if ENABLE_CONTACT_SHADOWS == 1
-    color = applyContactShadow(color, depthtex0, texCoord, depth, viewPos, sceneMask, gbufferProjectionInverse, dist, worldDir, worldTime, rainStrength, CONTACT_SHADOW_INTENSITY);
+    color = applyContactShadow(color, depthtex0, texCoord, depth, viewPos, terrainSceneMask, gbufferProjectionInverse, dist, worldDir, worldTime, rainStrength, CONTACT_SHADOW_INTENSITY);
 #endif
 #if ENABLE_NORMAL_FORM_LIGHTING == 1
-    color = applyTerrainFormLighting(color, worldDir, sceneMask, terrainWetMask, terrainWallMask, shadowVisibility, worldNormal, normalMask, worldTime, rainStrength);
+    color = applyTerrainFormLighting(color, worldDir, terrainSceneMask, terrainWetMask, terrainWallMask, shadowVisibility, worldNormal, normalMask, worldTime, rainStrength);
 #endif
 
     // Mood lighting
     color = applyMoodLighting(color, viewPos, sceneMask, LIGHTING_STRENGTH, rainStrength, worldTime, heldBlockLightValue, heldBlockLightValue2, shadowVisibility, lavaMask, frameTimeCounter, TORCH_LIGHT_INTENSITY, DAY_LIGHT_STRENGTH, NIGHT_LIGHT_STRENGTH, SUNSET_GLOW_STRENGTH);
 
     // Rain-wide wet highlight, then surface-biased fake reflection
-    color = applyGlobalWetHighlight(color, sceneMask, surfaceRainStrength, RAIN_REFLECTION_INTENSITY);
+    color = applyGlobalWetHighlight(color, terrainSceneMask, surfaceRainStrength, RAIN_REFLECTION_INTENSITY);
 #if ENABLE_WET_GROUND_LAYER == 1
     color = applyWetGroundLayer(color, texCoord, worldDir, depth, sceneMask, terrainWetMask, terrainWallMask, skyReflectionColor, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
 #endif
@@ -134,7 +136,7 @@ void main() {
 #endif
     color = applyWetWallRunoff(color, texCoord, worldDir, depth, sceneMask, terrainWallMask, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
 #if ENABLE_WET_SPECULAR == 1
-    color = applyWetSpecularBRDF(color, worldDir, depth, sceneMask, terrainWetMask, terrainWallMask, surfaceRainStrength, worldTime, RAIN_REFLECTION_INTENSITY);
+    color = applyWetSpecularBRDF(color, worldDir, depth, sceneMask, terrainWetMask, terrainWallMask, worldNormal, normalMask, surfaceRainStrength, worldTime, RAIN_REFLECTION_INTENSITY);
 #endif
 #if ENABLE_WATER_SURFACE == 1
     color = applyWaterSurface(color, colortex0, texCoord, sceneMask, waterMask, worldNormal, worldDir, dist, skyReflectionColor, surfaceRainStrength, frameTimeCounter, RAIN_REFLECTION_INTENSITY);
